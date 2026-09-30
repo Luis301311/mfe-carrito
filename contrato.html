@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prueba de contrato · mfe-carrito</title>
+  <link rel="stylesheet" href="http://localhost:8085/tokens.css">
+  <style>
+    body { font-family: var(--sabor-fuente, Arial, sans-serif); margin: 24px; color: var(--sabor-color-texto, #1f2a37); background: var(--sabor-color-fondo, #fafafa); }
+    h1 { color: var(--sabor-color-primario, #0b4f8a); font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--sabor-color-texto, #5b6573); font-size: 13px; margin: 0 0 16px; }
+    #resumen { font-size: 16px; font-weight: bold; padding: 10px 14px; border-radius: var(--sabor-radio, 4px); margin-bottom: 16px; }
+    #resumen.ok { background: #eaf6ea; color: var(--sabor-color-acento, #1b7a3e); }
+    #resumen.error { background: #fdecea; color: var(--sabor-color-error, #c0392b); }
+    h2.seccion { font-size: 15px; margin: 22px 0 6px; color: var(--sabor-color-primario, #0b4f8a); }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--sabor-color-fondo, #ffffff); }
+    td, th { border: 1px solid #d8dee6; padding: 7px 10px; text-align: left; vertical-align: top; }
+    th { background: #eef2f6; width: 46px; }
+    .marca { font-weight: bold; }
+    .ok   { color: var(--sabor-color-acento, #1b7a3e); }
+    .error{ color: var(--sabor-color-error, #c0392b); }
+    .detalle { font-family: Consolas, monospace; font-size: 12px; color: var(--sabor-color-texto, #5b6573); }
+  </style>
+</head>
+<body>
+  <h1>Prueba de contrato · mfe-carrito</h1>
+  <p class="sub">Verifica el contrato <b>sin el contenedor</b> (puerto 8080). Cada resultado también sale por <code>console.assert</code>.</p>
+
+  <div id="resumen">Ejecutando…</div>
+
+  <h2 class="seccion">Montaje / desmontaje</h2>
+  <table id="tabla-montaje"></table>
+
+  <h2 class="seccion">Consumo de <code>carrito:agregar</code> (v1.0 y v1.1)</h2>
+  <table id="tabla-agregar"></table>
+
+  <h2 class="seccion">Eventos publicados</h2>
+  <table id="tabla-eventos"></table>
+
+  <h2 class="seccion">Montaje real</h2>
+  <div id="raiz-prueba"></div>
+
+  <script src="carrito.js"></script>
+  <script>
+    var filas = [];
+
+    function comprobar(seccion, condicion, descripcion) {
+      filas.push({ seccion: seccion, ok: !!condicion, descripcion: descripcion });
+      console.assert(!!condicion, '[contrato mfe-carrito] FALLA: ' + descripcion);
+      return !!condicion;
+    }
+
+    function pintar() {
+      var resumen = document.getElementById('resumen');
+      var total = filas.length;
+      var malas = filas.filter(function (f) { return !f.ok; }).length;
+      resumen.textContent = malas === 0
+        ? '✓ ' + total + ' comprobaciones: TODAS OK'
+        : '✗ ' + malas + ' de ' + total + ' comprobaciones FALLAN';
+      resumen.className = malas === 0 ? 'ok' : 'error';
+      console.log('[contrato mfe-carrito] ' + (malas === 0 ? 'TODO OK' : malas + ' FALLAS') + ' (' + total + ' pruebas)');
+
+      ['montaje', 'agregar', 'eventos'].forEach(function (clave) {
+        var tabla = document.getElementById('tabla-' + clave);
+        tabla.innerHTML = '<tr><th>✓/✗</th><th>Comprobación</th></tr>' +
+          filas.filter(function (f) { return f.seccion === clave; }).map(function (f) {
+            return '<tr><td class="marca ' + (f.ok ? 'ok' : 'error') + '">' + (f.ok ? '✓' : '✗') +
+              '</td><td>' + f.descripcion + '</td></tr>';
+          }).join('');
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 1. Montaje: window.renderCarrito / window.unmountCarrito
+    // ------------------------------------------------------------------
+    (function () {
+      var S = 'montaje';
+      comprobar(S, typeof window.renderCarrito === 'function', 'window.renderCarrito es una función');
+      comprobar(S, typeof window.unmountCarrito === 'function', 'window.unmountCarrito es una función');
+
+      var raiz = document.getElementById('raiz-prueba');
+      if (typeof window.renderCarrito === 'function') {
+        window.renderCarrito('raiz-prueba');
+      }
+      comprobar(S, raiz.children.length > 0, 'renderCarrito("raiz-prueba") genera contenido');
+
+      if (typeof window.unmountCarrito === 'function') window.unmountCarrito('raiz-prueba');
+      comprobar(S, raiz.children.length === 0, 'unmountCarrito("raiz-prueba") deja el contenedor vacío');
+
+      window.renderCarrito('raiz-prueba');
+    })();
+
+    // ------------------------------------------------------------------
+    // 2. Compatibilidad hacia atrás: carrito:agregar v1.0 y v1.1
+    //    v1.0 -> { id, nombre, precio }
+    //    v1.1 -> { version, id, nombre, precio, categoria }
+    // ------------------------------------------------------------------
+    (function () {
+      var S = 'agregar';
+
+      function agregar(detalle) {
+        var totalAntes = window.__carritoInterno().total;
+        window.dispatchEvent(new CustomEvent('carrito:agregar', { detail: detalle }));
+        return window.__carritoInterno().total - totalAntes;
+      }
+
+      // v1.0
+      var d10a = agregar({ id: 900, nombre: 'Prueba v1.0 A', precio: 1000 });
+      comprobar(S, d10a === 1000, 'v1.0 sin version ni categoria: el plato se agrega (total +$1.000)');
+
+      var d10b = agregar({ id: 900, nombre: 'Prueba v1.0 A', precio: 1000 });
+      comprobar(S, d10b === 1000, 'v1.0 repetido: sube la cantidad del mismo id, no duplica la fila');
+
+      // v1.1
+      var d11 = agregar({ version: '1.1', id: 901, nombre: 'Prueba v1.1 B', precio: 2500, categoria: 'Plato fuerte' });
+      comprobar(S, d11 === 2500, 'v1.1 con version y categoria: el plato se agrega (total +$2.500)');
+
+      // Un detail inválido debe ignorarse sin romper nada
+      var antes = window.__carritoInterno().total;
+      window.dispatchEvent(new CustomEvent('carrito:agregar', { detail: { id: 902 } }));
+      window.dispatchEvent(new CustomEvent('carrito:agregar', { detail: null }));
+      comprobar(S, window.__carritoInterno().total === antes, 'detail incompleto o nulo: se ignora sin cambiar el total');
+
+      // Ambos formatos conviven en la misma lista
+      var interno = window.__carritoInterno();
+      var tiene900 = interno.items.some(function (i) { return i.id === 900 && i.cantidad === 2; });
+      var tiene901 = interno.items.some(function (i) { return i.id === 901 && i.categoria === 'Plato fuerte'; });
+      comprobar(S, tiene900, 'el item v1.0 queda con cantidad 2');
+      comprobar(S, tiene901, 'el item v1.1 guarda la categoria nueva');
+    })();
+
+    // ------------------------------------------------------------------
+    // 3. Eventos publicados: estructura del contrato
+    // ------------------------------------------------------------------
+    (function () {
+      var S = 'eventos';
+      var eventos = [];
+      var cap = function (e) { eventos.push({ tipo: e.type, detalle: e.detail }); };
+      window.addEventListener('carrito:actualizado', cap);
+      window.addEventListener('pedido:confirmado', cap);
+
+      // Click en "Confirmar pedido" (mismo camino que el usuario)
+      var boton = document.querySelector('#raiz-prueba .car-confirmar');
+      comprobar(S, !!boton, 'aparece el botón "Confirmar pedido" con platos en el carrito');
+      if (boton) boton.click();
+
+      window.removeEventListener('carrito:actualizado', cap);
+      window.removeEventListener('pedido:confirmado', cap);
+
+      var upd = eventos.filter(function (e) { return e.tipo === 'carrito:actualizado'; }).pop();
+      var conf = eventos.filter(function (e) { return e.tipo === 'pedido:confirmado'; }).pop();
+
+      // --- carrito:actualizado
+      comprobar(S, !!upd, 'se publica carrito:actualizado');
+      if (upd) {
+        comprobar(S, upd.detalle && typeof upd.detalle.cantidad === 'number', 'carrito:actualizado.cantidad es número');
+        comprobar(S, upd.detalle && typeof upd.detalle.total === 'number', 'carrito:actualizado.total es número');
+        comprobar(S, upd.detalle.cantidad === 0 && upd.detalle.total === 0, 'tras confirmar, el carrito queda en { cantidad: 0, total: 0 }');
+      }
+
+      // --- pedido:confirmado v1.0
+      comprobar(S, !!conf, 'se publica pedido:confirmado');
+      if (conf) {
+        var d = conf.detalle;
+        comprobar(S, d.version === '1.0', "pedido:confirmado.version === '1.0'");
+        comprobar(S, d.id !== undefined && d.id !== null, 'pedido:confirmado.id viene definido');
+        comprobar(S, Array.isArray(d.items) && d.items.length > 0, 'pedido:confirmado.items es un arreglo no vacío');
+        var itemOk = (d.items || []).every(function (it) {
+          return it.id !== undefined && typeof it.nombre === 'string'
+            && typeof it.precio === 'number' && typeof it.cantidad === 'number';
+        });
+        comprobar(S, itemOk, 'cada item tiene { id, nombre: texto, precio: número, cantidad: número }');
+        comprobar(S, typeof d.total === 'number' && d.total > 0, 'pedido:confirmado.total es un número mayor que 0');
+        comprobar(S, typeof d.fecha === 'string' && !isNaN(new Date(d.fecha).getTime()), 'pedido:confirmado.fecha es una fecha válida');
+        var suma = (d.items || []).reduce(function (a, it) { return a + it.precio * it.cantidad; }, 0);
+        comprobar(S, suma === d.total, 'total coincide con la suma de los items');
+      }
+
+      comprobar(S, window.__carritoInterno().items.length === 0, 'el carrito quedó vacío tras confirmar');
+    })();
+
+    pintar();
+  </script>
+</body>
+</html>

@@ -2,29 +2,56 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>mfe-carrito (modo independiente)</title>
+  <link rel="stylesheet" href="http://localhost:8085/tokens.css">
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #fafafa; }
-    .banda { background: #fff3c4; padding: 8px 12px; margin-bottom: 16px; font-size: 13px; }
+    body { font-family: var(--sabor-fuente, Arial, sans-serif); margin: 24px; color: var(--sabor-color-texto, #1f2a37); background: var(--sabor-color-fondo, #fafafa); }
+    .banda { background: #fff3c4; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; border-radius: var(--sabor-radio, 4px); }
+    .banda button { margin: 4px 6px 0 0; padding: 6px 10px; cursor: pointer; border: 1px solid #cbb84a; background: #fff; border-radius: var(--sabor-radio, 4px); font-family: inherit; }
+    #estado { font-family: Consolas, monospace; font-size: 12px; color: var(--sabor-color-texto, #5b6573); }
   </style>
 </head>
 <body>
   <div class="banda">
-    Modo independiente: simulamos el evento del catálogo con estos botones.
-    <button onclick="simular(101, 'Plato de prueba A', 10000)">Simular plato A</button>
-    <button onclick="simular(102, 'Plato de prueba B', 2500)">Simular plato B</button>
+    <strong>Modo independiente</strong> (el contenedor es <code>contenedor/</code>, puerto 8080).<br>
+    Simulamos lo que publica el catálogo, en las dos versiones del contrato:
+    <div>
+      <button onclick="simular('1.0')">carrito:agregar v1.0 (sin category)</button>
+      <button onclick="simular('1.1')">carrito:agregar v1.1 (con categoría)</button>
+      <button onclick="simularInvalido()">detail inválido (debe ignorarse)</button>
+    </div>
   </div>
+
   <div id="raiz-local"></div>
-  <p id="estado"></p>
+
+  <h3>Eventos publicados por este micro frontend</h3>
+  <p id="estado">—</p>
 
   <script src="carrito.js"></script>
   <script>
-    function simular(id, nombre, precio) {
-      window.dispatchEvent(new CustomEvent('carrito:agregar', { detail: { id, nombre, precio } }));
+    // v1.0: { id, nombre, precio }  (lo publicly el catálogo antes de la Actividad 2)
+    // v1.1: { version, id, nombre, precio, categoria }
+    function simular(version) {
+      var detalle = { id: 101, nombre: 'Plato de prueba A', precio: 10000 };
+      if (version === '1.1') {
+        detalle = { version: '1.1', id: 101, nombre: 'Plato de prueba A', precio: 10000, categoria: 'Plato fuerte' };
+      }
+      window.dispatchEvent(new CustomEvent('carrito:agregar', { detail: detalle }));
     }
+    function simularInvalido() {
+      window.dispatchEvent(new CustomEvent('carrito:agregar', { detail: { id: 999 } }));
+    }
+
     window.addEventListener('carrito:actualizado', function (e) {
-      document.getElementById('estado').textContent = 'carrito:actualizado → ' + JSON.stringify(e.detail);
+      document.getElementById('estado').textContent =
+        'carrito:actualizado → ' + JSON.stringify(e.detail);
     });
+    window.addEventListener('pedido:confirmado', function (e) {
+      document.getElementById('estado').textContent =
+        'pedido:confirmado → ' + JSON.stringify(e.detail);
+    });
+
     window.renderCarrito('raiz-local');
   </script>
 </body>
